@@ -2,14 +2,19 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertCircle,
+  Flower2,
+  Heart,
   Mic,
   MicOff,
-  AlertCircle,
-  Heart,
-  Flower2,
   Sparkles,
   Wind,
+  X,
 } from "lucide-react";
+
+/* =========================
+   TYPES
+   ========================= */
 
 type AppStatus = "idle" | "listening" | "thinking" | "speaking" | "error";
 
@@ -26,10 +31,89 @@ type SelineResponse = {
   texto: string;
   status?: string;
   passo?: number;
+  produtos?: string[];
 };
+
+type VisualProduct = {
+  name: string;
+  volume: string;
+  reference?: string;
+  price?: string;
+  imageSrc: string;
+};
+
+/* =========================
+   CONSTANTS
+   ========================= */
 
 const CHAT_MODEL = "gemini-3-flash-preview";
 const TTS_MODEL = "gemini-2.5-flash-preview-tts";
+
+const VISUAL_PRODUCT_REGISTRY: Record<string, VisualProduct> = {
+  DELUNE: {
+    name: "DELUNE",
+    volume: "100ml",
+    price: "R$ 280,00",
+    imageSrc: "/products/visual/delune.png",
+  },
+  HAYAL: {
+    name: "HAYAL",
+    volume: "100ml",
+    price: "R$ 290,00",
+    imageSrc: "/products/visual/hayal.png",
+  },
+  "AMBER MONARCH": {
+    name: "AMBER MONARCH",
+    volume: "100ml",
+    price: "R$ 255,00",
+    reference: "inspirado em Orientica Royal Amber",
+    imageSrc: "/products/visual/amber-monarch.png",
+  },
+  DIVINE: {
+    name: "DIVINE",
+    volume: "100ml",
+    price: "R$ 259,00",
+    reference: "inspirado em Xerjoff Erba Pura",
+    imageSrc: "/products/visual/divine.png",
+  },
+  "SHEIKH'S SECRET": {
+    name: "SHEIKH'S SECRET",
+    volume: "100ml",
+    price: "R$ 259,00",
+    reference: "inspirado em Parfums de Marly Althair",
+    imageSrc: "/products/visual/sheikhs-secret.png",
+  },
+  ASYD: {
+    name: "ASYD",
+    volume: "15ml",
+    reference: "inspirado em Lattafa Asad",
+    imageSrc: "/products/visual/asyd.png",
+  },
+  AYALA: {
+    name: "AYALA",
+    volume: "15ml",
+    reference: "inspirado em Lattafa Fakhar Rose",
+    imageSrc: "/products/visual/ayala.png",
+  },
+  CANIBAL: {
+    name: "CANIBAL",
+    volume: "15ml",
+    reference: "inspirado em Animale For Men",
+    imageSrc: "/products/visual/canibal.png",
+  },
+  "BLACK CAR": {
+    name: "BLACK CAR",
+    volume: "15ml",
+    reference: "inspirado em Ferrari Scuderia Black",
+    imageSrc: "/products/visual/black-car.png",
+  },
+  "COMANDER VICTORY": {
+    name: "COMANDER VICTORY",
+    volume: "15ml",
+    reference: "inspirado em Paco Rabanne Invictus Victory",
+    imageSrc: "/products/visual/comander-victory.png",
+  },
+};
 
 const BUSINESS_CONTEXT = `
 Você é Selina, consultora de curadoria da SÉLÈNE.
@@ -70,8 +154,7 @@ REGRAS DE CURADORIA
 1. Comece com saudação breve.
 2. Se o cliente já perguntou algo, responda brevemente ao ponto.
 3. Pergunte o nome do cliente logo no início, com naturalidade.
-4. Entenda a necessidade antes de indicar:
-   - perfume, presente, ocasião, perfil olfativo, rotina, autocuidado, masculino, feminino, unissex, infantil, árabe, faixa de investimento
+4. Entenda a necessidade antes de indicar.
 5. Faça a curadoria.
 6. Ao citar produto, use esta ordem:
    - nome exato do produto
@@ -94,24 +177,11 @@ REGRAS DE CURADORIA
    - quando receber o CEP, apenas confirme o recebimento; não diga a cidade se o sistema não a informou
    - no fechamento, diga que será gerado o link de pagamento do Mercado Pago
 
-REGRAS ANTI-ERRO
-- não repetir o mesmo nome de produto duas vezes na mesma resposta sem necessidade
-- não trocar um produto por outro com nome parecido
-- não misturar linhas masculina e feminina sem explicar a intenção
-- se estiver em dúvida entre duas opções, assuma menos e pergunte mais
-- se o cliente estiver indeciso, ofereça 2 opções bem justificadas
-- não listar notas olfativas demais; cite apenas o suficiente para vender bem
-- não fazer respostas longas
-- não fazer perguntas duplas
-- não deduzir cidade com base em CEP
-- se o cliente pedir confirmação final do pedido, aí sim pode repetir a lista completa dos itens
-
-ESTRUTURA IDEAL DAS FALAS
-- abertura: breve
-- investigação: 1 pergunta
-- curadoria: 2 ou 3 opções no máximo
-- ajuste: 1 pergunta
-- fechamento: objetivo
+REGRA DO CAMPO PRODUTOS
+- sempre que você citar produtos na resposta, preencha o campo "produtos" com os nomes EXATOS dos itens citados
+- preserve a mesma ordem em que os produtos aparecem na fala
+- use no máximo 3 produtos por resposta
+- se nenhum produto for citado, use []
 
 FORMATO DA RESPOSTA
 Responda APENAS em JSON válido.
@@ -120,7 +190,7 @@ Sem crases.
 Sem texto fora do JSON.
 
 FORMATO EXATO:
-{"texto":"fala natural da Selina","status":"frase curtíssima","passo":1}
+{"texto":"fala natural da Selina","status":"curadoria","passo":1,"produtos":["DELUNE","DIVINE"]}
 `;
 
 const CATALOG_CONTEXT = `
@@ -396,19 +466,66 @@ BODY HAIR MIST
 - volume: 120ml
 - preço: R$ 69,90
 - categoria: infantil
-
-REGRAS IMPORTANTES DO CATÁLOGO
-- use apenas os nomes exatamente como aparecem aqui
-- quando existir referência olfativa, use a frase "inspirado em"
-- sempre mencionar ml ou g quando disponível
-- quando o preço exato estiver explícito aqui, use esse valor
-- quando o preço exato não estiver explícito aqui, não invente
-- se o cliente pedir valor de item sem preço explícito aqui, diga que vai fechar o valor correto na composição final
 `;
 
 const SYSTEM_PROMPT = `${BUSINESS_CONTEXT}
 
 ${CATALOG_CONTEXT}`;
+
+/* =========================
+   HELPERS
+   ========================= */
+
+function normalizeProductKey(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+function getVisualProductsFromNames(names: string[]) {
+  const seen = new Set<string>();
+
+  return names
+    .map((name) => normalizeProductKey(name))
+    .map((key) => VISUAL_PRODUCT_REGISTRY[key])
+    .filter((item): item is VisualProduct => Boolean(item))
+    .filter((item) => {
+      if (seen.has(item.name)) return false;
+      seen.add(item.name);
+      return true;
+    })
+    .slice(0, 3);
+}
+
+function getVisualProductsFromText(text: string) {
+  const normalizedText = normalizeProductKey(text);
+  const matches: VisualProduct[] = [];
+
+  Object.entries(VISUAL_PRODUCT_REGISTRY).forEach(([key, item]) => {
+    if (normalizedText.includes(key) && !matches.some((m) => m.name === item.name)) {
+      matches.push(item);
+    }
+  });
+
+  return matches.slice(0, 3);
+}
+
+function mergeVisualProducts(primary: VisualProduct[], secondary: VisualProduct[]) {
+  const seen = new Set<string>();
+
+  return [...primary, ...secondary].filter((item) => {
+    if (seen.has(item.name)) return false;
+    seen.add(item.name);
+    return true;
+  });
+}
+
+/* =========================
+   COMPONENTS
+   ========================= */
 
 function LaboratoryOrb({ status }: { status: AppStatus }) {
   return (
@@ -713,9 +830,89 @@ function LaboratoryOrb({ status }: { status: AppStatus }) {
   );
 }
 
+function VisualProductCard({ product }: { product: VisualProduct }) {
+  const [hiddenByError, setHiddenByError] = useState(false);
+
+  if (hiddenByError) return null;
+
+  return (
+    <div className="w-[132px] flex-none rounded-2xl border border-[#545353]/10 bg-white/90 p-2 shadow-[0_10px_30px_rgba(84,83,83,0.08)]">
+      <div className="mb-2 overflow-hidden rounded-xl bg-[#f7f7f7]">
+        <img
+          src={product.imageSrc}
+          alt={product.name}
+          className="h-[132px] w-full object-contain"
+          loading="lazy"
+          onError={() => setHiddenByError(true)}
+        />
+      </div>
+
+      <div className="space-y-1">
+        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#545353]">
+          {product.name}
+        </p>
+        <p className="text-[10px] text-[#545353]/65">{product.volume}</p>
+        {product.price ? (
+          <p className="text-[10px] font-medium text-[#545353]/80">{product.price}</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ProductShowcasePopup({
+  open,
+  products,
+  onClose,
+}: {
+  open: boolean;
+  products: VisualProduct[];
+  onClose: () => void;
+}) {
+  if (!open || products.length === 0) return null;
+
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-32 z-30 flex justify-center px-4">
+      <div className="pointer-events-auto w-full max-w-[420px] rounded-[28px] border border-[#545353]/10 bg-white/92 p-4 shadow-[0_24px_80px_rgba(84,83,83,0.12)] backdrop-blur-xl">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#545353]/50">
+              Curadoria visual
+            </p>
+            <p className="mt-1 text-[11px] text-[#545353]/70">
+              Mostrando apenas os itens com imagem disponível
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-[#545353]/10 bg-white text-[#545353]/70 transition hover:border-[#545353]/25 hover:text-[#545353]"
+            aria-label="Fechar vitrine visual"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="flex gap-3 overflow-x-auto pb-1">
+          {products.map((product) => (
+            <VisualProductCard key={product.name} product={product} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================
+   PAGE
+   ========================= */
+
 export default function Page() {
   const [status, setStatus] = useState<AppStatus>("idle");
   const [errorMsg, setErrorMsg] = useState("");
+  const [popupProducts, setPopupProducts] = useState<VisualProduct[]>([]);
+  const [isPopupOpen, setIsPopupOpen] = useState(false);
 
   const audioCtx = useRef<AudioContext | null>(null);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
@@ -756,6 +953,26 @@ export default function Page() {
   const setErrorState = (message: string) => {
     setStatus("error");
     setErrorMsg(message);
+  };
+
+  const syncPopupProducts = (result: SelineResponse) => {
+    const namesFromJson = Array.isArray(result.produtos)
+      ? result.produtos.filter((item): item is string => typeof item === "string")
+      : [];
+
+    const products = mergeVisualProducts(
+      getVisualProductsFromNames(namesFromJson),
+      getVisualProductsFromText(result.texto)
+    ).slice(0, 3);
+
+    if (products.length > 0) {
+      setPopupProducts(products);
+      setIsPopupOpen(true);
+      return;
+    }
+
+    setPopupProducts([]);
+    setIsPopupOpen(false);
   };
 
   const initAudio = async (): Promise<boolean> => {
@@ -886,7 +1103,7 @@ export default function Page() {
         role: "user",
         parts: [
           {
-            text: `O cliente clicou na sugestão: ${label}. Atenda com voz natural, conduza a curadoria de forma elegante, faça apenas uma pergunta por vez e não seja prolixa.`,
+            text: `O cliente clicou na sugestão: ${label}. Atenda com voz natural, conduza a curadoria de forma elegante, faça apenas uma pergunta por vez e, se citar produtos, preencha corretamente o campo produtos.`,
           },
         ],
       },
@@ -918,7 +1135,7 @@ export default function Page() {
           role: "user",
           parts: [
             {
-              text: "Responda ao áudio do cliente como Selina, seguindo rigorosamente as regras de curadoria, brevidade, catálogo e condução comercial.",
+              text: "Responda ao áudio do cliente como Selina, seguindo rigorosamente as regras de curadoria, brevidade, catálogo e condução comercial. Se citar produtos, preencha corretamente o campo produtos.",
             },
             { inlineData: { mimeType, data: base64 } },
           ],
@@ -954,9 +1171,9 @@ export default function Page() {
             },
             generationConfig: {
               responseMimeType: "application/json",
-              temperature: 0.35,
+              temperature: 0.3,
               topP: 0.8,
-              maxOutputTokens: 220,
+              maxOutputTokens: 260,
               thinkingConfig: {
                 thinkingLevel: "low",
               },
@@ -969,8 +1186,7 @@ export default function Page() {
 
       if (!response.ok) {
         const apiMessage =
-          data?.error?.message ||
-          `Falha no Gemini (status ${response.status}).`;
+          data?.error?.message || `Falha no Gemini (status ${response.status}).`;
         throw new Error(apiMessage);
       }
 
@@ -989,13 +1205,12 @@ export default function Page() {
 
       history.current.push(contents[0], data.candidates[0].content);
 
+      syncPopupProducts(result);
       await generateVoice(result.texto);
     } catch (error) {
       console.error("Erro em callGemini:", error);
       const message =
-        error instanceof Error
-          ? error.message
-          : "Erro inesperado ao consultar a IA.";
+        error instanceof Error ? error.message : "Erro inesperado ao consultar a IA.";
       setErrorState(message);
     }
   };
@@ -1008,11 +1223,7 @@ export default function Page() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [
-              {
-                parts: [{ text }],
-              },
-            ],
+            contents: [{ parts: [{ text }] }],
             generationConfig: {
               responseModalities: ["AUDIO"],
               speechConfig: {
@@ -1036,8 +1247,7 @@ export default function Page() {
       }
 
       const inlineData = data?.candidates?.[0]?.content?.parts?.find(
-        (part: { inlineData?: { data?: string; mimeType?: string } }) =>
-          part.inlineData?.data
+        (part: { inlineData?: { data?: string } }) => part.inlineData?.data
       )?.inlineData;
 
       const pcmBase64: string | undefined = inlineData?.data;
@@ -1050,9 +1260,7 @@ export default function Page() {
     } catch (error) {
       console.error("Erro em generateVoice:", error);
       const message =
-        error instanceof Error
-          ? error.message
-          : "Falha inesperada ao gerar voz.";
+        error instanceof Error ? error.message : "Falha inesperada ao gerar voz.";
       setErrorState(message);
     }
   };
@@ -1159,6 +1367,12 @@ export default function Page() {
           Toque para falar
         </p>
       </footer>
+
+      <ProductShowcasePopup
+        open={isPopupOpen}
+        products={popupProducts}
+        onClose={() => setIsPopupOpen(false)}
+      />
     </div>
   );
 }
