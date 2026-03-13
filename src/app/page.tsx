@@ -830,31 +830,97 @@ function LaboratoryOrb({ status }: { status: AppStatus }) {
   );
 }
 
-function VisualProductCard({ product }: { product: VisualProduct }) {
+function VisualProductCard({
+  product,
+  onSelect,
+}: {
+  product: VisualProduct;
+  onSelect: (product: VisualProduct) => void;
+}) {
   const [hiddenByError, setHiddenByError] = useState(false);
 
   if (hiddenByError) return null;
 
   return (
-    <div className="w-[132px] flex-none rounded-2xl border border-[#545353]/10 bg-white/90 p-2 shadow-[0_10px_30px_rgba(84,83,83,0.08)]">
-      <div className="mb-2 overflow-hidden rounded-xl bg-[#f7f7f7]">
+    <button
+      type="button"
+      onClick={() => onSelect(product)}
+      className="w-[148px] flex-none rounded-[24px] border border-[#545353]/10 bg-white/95 p-2.5 text-left shadow-[0_12px_34px_rgba(84,83,83,0.10)] transition hover:-translate-y-0.5 hover:border-[#545353]/20"
+      aria-label={`Ampliar imagem do produto ${product.name}`}
+    >
+      <div className="mb-3 overflow-hidden rounded-[18px] bg-[#f7f7f7]">
         <img
           src={product.imageSrc}
           alt={product.name}
-          className="h-[132px] w-full object-contain"
+          className="h-[176px] w-full object-contain"
           loading="lazy"
           onError={() => setHiddenByError(true)}
         />
       </div>
 
-      <div className="space-y-1">
+      <div className="space-y-1.5 pb-1">
         <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#545353]">
           {product.name}
         </p>
-        <p className="text-[10px] text-[#545353]/65">{product.volume}</p>
+        <p className="text-[11px] text-[#545353]/65">{product.volume}</p>
         {product.price ? (
-          <p className="text-[10px] font-medium text-[#545353]/80">{product.price}</p>
+          <p className="text-[11px] font-medium text-[#545353]/80">{product.price}</p>
         ) : null}
+      </div>
+    </button>
+  );
+}
+
+function ProductImageLightbox({
+  product,
+  onClose,
+}: {
+  product: VisualProduct | null;
+  onClose: () => void;
+}) {
+  const [hiddenByError, setHiddenByError] = useState(false);
+
+  useEffect(() => {
+    setHiddenByError(false);
+  }, [product]);
+
+  if (!product || hiddenByError) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-5 py-10 backdrop-blur-[2px]">
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute inset-0 cursor-default"
+        aria-label="Fechar imagem ampliada"
+      />
+
+      <div className="relative z-10 w-full max-w-[440px] rounded-[28px] border border-white/35 bg-white p-4 shadow-[0_28px_90px_rgba(0,0,0,0.18)]">
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full border border-[#545353]/10 bg-white text-[#545353]/70 transition hover:border-[#545353]/25 hover:text-[#545353]"
+          aria-label="Fechar imagem ampliada"
+        >
+          <X size={16} />
+        </button>
+
+        <div className="overflow-hidden rounded-[22px] bg-[#f8f8f8] p-4">
+          <img
+            src={product.imageSrc}
+            alt={product.name}
+            className="h-[360px] w-full object-contain"
+            onError={() => setHiddenByError(true)}
+          />
+        </div>
+
+        <div className="mt-4 space-y-1 pr-12">
+          <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#545353]">
+            {product.name}
+          </p>
+          <p className="text-sm text-[#545353]/70">{product.volume}</p>
+          {product.price ? <p className="text-sm font-medium text-[#545353]/85">{product.price}</p> : null}
+        </div>
       </div>
     </div>
   );
@@ -864,31 +930,28 @@ function ProductShowcasePopup({
   open,
   products,
   onClose,
+  onSelect,
 }: {
   open: boolean;
   products: VisualProduct[];
   onClose: () => void;
+  onSelect: (product: VisualProduct) => void;
 }) {
   if (!open || products.length === 0) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-32 z-30 flex justify-center px-4">
-      <div className="pointer-events-auto w-full max-w-[420px] rounded-[28px] border border-[#545353]/10 bg-white/92 p-4 shadow-[0_24px_80px_rgba(84,83,83,0.12)] backdrop-blur-xl">
+    <div className="pointer-events-none fixed inset-x-0 bottom-44 z-30 flex justify-center px-4 sm:bottom-40">
+      <div className="pointer-events-auto w-full max-w-[460px] rounded-[30px] border border-[#545353]/10 bg-white/94 p-4 shadow-[0_26px_90px_rgba(84,83,83,0.12)] backdrop-blur-xl">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#545353]/50">
-              Curadoria visual
-            </p>
-            <p className="mt-1 text-[11px] text-[#545353]/70">
-              Mostrando apenas os itens com imagem disponível
-            </p>
-          </div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#545353]/55">
+            Produtos escolhidos
+          </p>
 
           <button
             type="button"
             onClick={onClose}
             className="flex h-9 w-9 items-center justify-center rounded-full border border-[#545353]/10 bg-white text-[#545353]/70 transition hover:border-[#545353]/25 hover:text-[#545353]"
-            aria-label="Fechar vitrine visual"
+            aria-label="Fechar vitrine de produtos"
           >
             <X size={16} />
           </button>
@@ -896,7 +959,11 @@ function ProductShowcasePopup({
 
         <div className="flex gap-3 overflow-x-auto pb-1">
           {products.map((product) => (
-            <VisualProductCard key={product.name} product={product} />
+            <VisualProductCard
+              key={product.name}
+              product={product}
+              onSelect={onSelect}
+            />
           ))}
         </div>
       </div>
@@ -913,6 +980,7 @@ export default function Page() {
   const [errorMsg, setErrorMsg] = useState("");
   const [popupProducts, setPopupProducts] = useState<VisualProduct[]>([]);
   const [isPopupOpen, setIsPopupOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<VisualProduct | null>(null);
 
   const audioCtx = useRef<AudioContext | null>(null);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
@@ -1372,6 +1440,12 @@ export default function Page() {
         open={isPopupOpen}
         products={popupProducts}
         onClose={() => setIsPopupOpen(false)}
+        onSelect={(product) => setSelectedProduct(product)}
+      />
+
+      <ProductImageLightbox
+        product={selectedProduct}
+        onClose={() => setSelectedProduct(null)}
       />
     </div>
   );
