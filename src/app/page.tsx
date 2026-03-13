@@ -33,7 +33,8 @@ export default function SeleneApp() {
 
   const initAudio = () => {
     if (!audioCtx.current) {
-      audioCtx.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      audioCtx.current = new AudioContextClass({ sampleRate: 24000 });
     }
     if (audioCtx.current.state === 'suspended') audioCtx.current.resume();
   };
@@ -53,7 +54,7 @@ export default function SeleneApp() {
       mediaRecorder.current.start();
       setStatus('listening');
       setDisplayText('Ouvindo você...');
-    } catch (err) { alert("Ative o microfone."); }
+    } catch (err) { console.error(err); }
   };
 
   const processAudio = async (blob: Blob) => {
