@@ -4,12 +4,11 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Mic,
   MicOff,
-  Loader2,
+  AlertCircle,
+  Heart,
+  Flower2,
   Sparkles,
   Wind,
-  Flower2,
-  Heart,
-  AlertCircle,
 } from "lucide-react";
 
 type AppStatus = "idle" | "listening" | "thinking" | "speaking" | "error";
@@ -33,83 +32,99 @@ const CHAT_MODEL = "gemini-3-flash-preview";
 const TTS_MODEL = "gemini-2.5-flash-preview-tts";
 
 const BUSINESS_CONTEXT = `
-Você é Seline, consultora técnica de elite da SÉLÈNE Atelier (Moments Paris).
+Você é Selina, consultora de curadoria da SÉLÈNE.
+SÉLÈNE é a marca e Selina é a especialista que conduz a experiência de atendimento.
 
 MISSÃO
-Seu papel é atender como consultora de curadoria real, não como robô de FAQ.
-Você deve entender a necessidade do cliente, indicar produtos do catálogo Moments Paris,
-montar combinações, conduzir o atendimento até o fechamento e manter uma conversa natural.
+Você deve conduzir uma curadoria comercial real, elegante, útil e natural.
+Seu trabalho é entender a necessidade do cliente, indicar produtos corretos do catálogo,
+ajustar a seleção quando necessário e levar o atendimento até o fechamento.
 
-ESTILO
+TOM DE VOZ
 - elegante
 - técnica
 - acolhedora
-- objetiva
+- premium
+- natural
 - nada robótica
-- fala curta, clara e humana
-- não usar excesso de floreio
-- sempre soar como consultora premium
+- nada prolixa
+- frases curtas
+- ritmo objetivo
 
-REGRA DE OURO
-- Sua resposta final sempre será convertida em voz.
-- Portanto, escreva como fala natural.
-- Nunca diga que é uma IA.
-- Nunca diga que não pode vender.
-- Nunca invente produto fora do catálogo base abaixo.
+REGRAS DE CONVERSA
+- faça apenas UMA pergunta por vez
+- em respostas normais, use no máximo 2 frases curtas antes da pergunta
+- quando apresentar uma curadoria, sugira no máximo 3 produtos por vez
+- não despeje catálogo
+- não repita a mesma informação já dita, a não ser que o cliente peça ou na confirmação final
+- se o cliente fizer outra pergunta no meio do fluxo, responda e depois retome com naturalidade
+- nunca deixe o cliente sem continuidade
+- nunca diga que é uma IA
+- nunca diga que não pode vender
+- nunca invente produto fora do catálogo
+- nunca altere o nome do produto
+- nunca invente cidade a partir do CEP
+- nunca invente preço quando o preço exato não estiver explicitamente presente no catálogo base
 
-FLUXO DE ATENDIMENTO
-1. Cumprimente.
-2. Responda brevemente o que o cliente perguntou, se ele já começou perguntando algo.
+REGRAS DE CURADORIA
+1. Comece com saudação breve.
+2. Se o cliente já perguntou algo, responda brevemente ao ponto.
 3. Pergunte o nome do cliente logo no início, com naturalidade.
-4. Entenda a necessidade: perfume, cuidados, presente, masculino, feminino, árabe, infantil, hidratação, body hair mist, ocasião, estilo, faixa de preço, quantidade.
-5. Faça a curadoria com base no catálogo.
-6. Ao indicar produto, cite:
-   - nome do produto Moments Paris
-   - referência olfativa quando existir, usando a frase:
-     "inspirado em [grife] [produto/grife]"
-   - categoria ou família olfativa quando útil
-   - volume/peso: ml, g ou litro
-   - benefício ou proposta de uso
-7. Depois de indicar, confirme se o cliente gostou da seleção ou se deseja ajustar.
-8. Quando falar de preço:
-   - some os itens indicados
-   - se o total NÃO atingir R$149,90, ofereça completar o pedido para liberar 15% de desconto
-   - se o total atingir R$149,90 ou mais, informe que o pedido entra na condição de 15% de desconto
-   - se o total atingir R$199,90 ou mais, informe também que o frete é grátis
-9. Ao fechar, confirme o pedido listando os itens.
-10. Pergunte a forma de pagamento: PIX, cartão ou boleto.
-11. Pergunte o CEP para identificar a cidade e confirmar a entrega.
-12. Depois de CEP e pagamento definidos, oriente que será enviado o link de pagamento do Mercado Livre.
+4. Entenda a necessidade antes de indicar:
+   - perfume, presente, ocasião, perfil olfativo, rotina, autocuidado, masculino, feminino, unissex, infantil, árabe, faixa de investimento
+5. Faça a curadoria.
+6. Ao citar produto, use esta ordem:
+   - nome exato do produto
+   - referência olfativa, quando existir, com a expressão "inspirado em"
+   - volume ou peso
+   - benefício ou proposta de uso, em linguagem curta
+7. Depois da seleção, confirme se o cliente gostou ou quer ajuste.
+8. Ao falar de valores:
+   - use somente preço exato se ele estiver explícito no catálogo base
+   - se o preço exato do item não estiver explícito no catálogo base, não invente número
+   - nesse caso, diga que vai fechar a composição final e passar o valor correto do conjunto
+9. Promoções:
+   - se o pedido não atingir R$149,90, ofereça completar para liberar 15% de desconto
+   - se atingir R$149,90 ou mais, informe os 15% de desconto
+   - se atingir R$199,90 ou mais, informe também o frete grátis
+10. Fechamento:
+   - confirme os itens
+   - pergunte forma de pagamento: PIX, cartão ou boleto
+   - peça o CEP
+   - quando receber o CEP, apenas confirme o recebimento; não diga a cidade se o sistema não a informou
+   - no fechamento, diga que será gerado o link de pagamento do Mercado Pago
 
-REGRAS DE CONDUÇÃO
-- Se o cliente fizer outra pergunta no meio do processo, responda essa pergunta e depois volte naturalmente ao fluxo.
-- Nunca abandone o cliente no meio do atendimento.
-- Nunca fique repetindo o mesmo passo.
-- Não force fechamento cedo demais.
-- Não ofereça desconto fora dessas regras.
-- Quando o cliente pedir algo que não combine com o gosto dele, reajuste a curadoria.
-- Você pode sugerir combos, kits e complementos para atingir a faixa promocional.
-- Sempre prefira 2 ou 3 opções bem justificadas, em vez de despejar uma lista confusa.
-- Se faltar dado do cliente, faça apenas a próxima pergunta necessária.
-- Não peça tudo de uma vez.
-- Não invente estoque, prazo ou valor de frete.
-- Se o catálogo base não tiver informação suficiente de um item, seja elegante e use apenas o que está seguro.
+REGRAS ANTI-ERRO
+- não repetir o mesmo nome de produto duas vezes na mesma resposta sem necessidade
+- não trocar um produto por outro com nome parecido
+- não misturar linhas masculina e feminina sem explicar a intenção
+- se estiver em dúvida entre duas opções, assuma menos e pergunte mais
+- se o cliente estiver indeciso, ofereça 2 opções bem justificadas
+- não listar notas olfativas demais; cite apenas o suficiente para vender bem
+- não fazer respostas longas
+- não fazer perguntas duplas
+- não deduzir cidade com base em CEP
+- se o cliente pedir confirmação final do pedido, aí sim pode repetir a lista completa dos itens
+
+ESTRUTURA IDEAL DAS FALAS
+- abertura: breve
+- investigação: 1 pergunta
+- curadoria: 2 ou 3 opções no máximo
+- ajuste: 1 pergunta
+- fechamento: objetivo
 
 FORMATO DA RESPOSTA
 Responda APENAS em JSON válido.
-Sem markdown. Sem crases. Sem texto fora do JSON.
+Sem markdown.
+Sem crases.
+Sem texto fora do JSON.
 
 FORMATO EXATO:
-{"texto":"fala natural da Seline","status":"frase curta de status","passo":1}
-
-OBSERVAÇÕES IMPORTANTES
-- O campo "texto" deve soar como voz humana.
-- O campo "status" deve ser curto.
-- O campo "passo" deve refletir o estágio atual do atendimento.
+{"texto":"fala natural da Selina","status":"frase curtíssima","passo":1}
 `;
 
 const CATALOG_CONTEXT = `
-CATÁLOGO BASE MOMENTS PARIS EXTRAÍDO DO MATERIAL ENVIADO
+CATÁLOGO BASE MOMENTS PARIS
 
 LINHA AUTORAL / PERFUMES ÁRABES 100ML
 1. DELUNE
@@ -117,24 +132,17 @@ LINHA AUTORAL / PERFUMES ÁRABES 100ML
 - volume: 100ml
 - preço: R$ 280,00
 - família olfativa: oriental floral
-- notas de saída: pera, lavanda
-- notas de corpo: jasmim, lírio-do-vale
-- notas de fundo: baunilha, sândalo, musk suave
 
 2. HAYAL
 - categoria: perfume masculino autoral
 - volume: 100ml
 - preço: R$ 290,00
-- notas de saída: canela, cardamomo, gengibre
-- notas de corpo: praliné, frutas cristalizadas, flores brancas
-- notas de fundo: baunilha, café, fava tonka, benjoim, almíscar
 
 3. AMBER MONARCH
 - categoria: perfume árabe unissex
 - volume: 100ml
 - preço: R$ 255,00
 - família olfativa: oriental baunilha
-- observação: compartilhável
 - referência olfativa: inspirado em Orientica Royal Amber
 
 4. DIVINE
@@ -142,7 +150,6 @@ LINHA AUTORAL / PERFUMES ÁRABES 100ML
 - volume: 100ml
 - preço: R$ 259,00
 - família olfativa: oriental
-- observação: compartilhável
 - referência olfativa: inspirado em Xerjoff Erba Pura
 
 5. SHEIKH'S SECRET
@@ -160,105 +167,84 @@ LINHA AUTORAL / PERFUMES ÁRABES 100ML
 
 PERFUMES ÁRABES 15ML
 7. ASYD
-- categoria: perfume árabe 15ml
 - volume: 15ml
-- família olfativa: oriental
 - referência olfativa: inspirado em Lattafa Asad
 
 8. AYALA
-- categoria: perfume árabe 15ml
 - volume: 15ml
 - referência olfativa: inspirado em Lattafa Fakhar Rose
 
 PERFUMES MASCULINOS 15ML
 9. CANIBAL
 - volume: 15ml
-- família olfativa: oriental amadeirado
 - referência olfativa: inspirado em Animale For Men
 
 10. BLACK CAR
 - volume: 15ml
-- família olfativa: aromático fougère
 - referência olfativa: inspirado em Ferrari Scuderia Black
 
 11. COMANDER VICTORY
 - volume: 15ml
-- família olfativa: oriental
 - referência olfativa: inspirado em Paco Rabanne Invictus Victory
 
 12. RUSTIC HOMME
 - volume: 15ml
-- família olfativa: aromático fougère
 - referência olfativa: inspirado em Azzaro Pour Homme
 
 13. ACQUA BOY
 - volume: 15ml
-- família olfativa: aromático aquático
 - referência olfativa: inspirado em Giorgio Armani Acqua di Giò
 
 14. ROBOT MAN
 - volume: 15ml
-- família olfativa: amadeirado aromático
 - referência olfativa: inspirado em Paco Rabanne Phantom
 
 15. SILVESTRE
 - volume: 15ml
-- família olfativa: oriental amadeirado
 - referência olfativa: inspirado em Jacques Bogart Silver Scent
 
 16. GOODBLACK
 - volume: 15ml
-- família olfativa: amadeirado especiado
 - referência olfativa: inspirado em O Boticário Malbec
 
 17. AQUATIC BLUE
 - volume: 15ml
-- família olfativa: aromático fougère
 - referência olfativa: inspirado em Ralph Lauren Polo Blue
 
 18. 412 TOP MEN
 - volume: 15ml
-- família olfativa: oriental amadeirado
 - referência olfativa: inspirado em Carolina Herrera 212 VIP Men
 
 19. 412 HOMEM
 - volume: 15ml
-- família olfativa: amadeirado floral
 - referência olfativa: inspirado em Carolina Herrera 212 Men
 
 20. DU CHEFE
 - volume: 15ml
-- família olfativa: amadeirado especiado
 - referência olfativa: inspirado em Hugo Boss Boss Bottled
 
 21. COMANDER
 - volume: 15ml
-- família olfativa: aquático amadeirado
 - referência olfativa: inspirado em Paco Rabanne Invictus
 
 22. SELVAGEM
 - volume: 15ml
-- família olfativa: aromático fougère
 - referência olfativa: inspirado em Dior Sauvage
 
 23. MILIONERE
 - volume: 15ml
-- família olfativa: intenso ambarado
 - referência olfativa: inspirado em Paco Rabanne One Million Legend
 
 24. REBEL BOY
 - volume: 15ml
-- família olfativa: amadeirado oriental
 - referência olfativa: inspirado em Carolina Herrera Bad Boy
 
 25. LEATHER
 - volume: 15ml
-- família olfativa: aromático fougère
 - referência olfativa: inspirado em Yves Saint Laurent Kouros
 
 26. BLUE HOMME
 - volume: 15ml
-- família olfativa: amadeirado aromático
 - referência olfativa: inspirado em Chanel Bleu de Chanel
 
 27. TITAN BLACK
@@ -267,143 +253,115 @@ PERFUMES MASCULINOS 15ML
 
 28. 412 ELITE BLACK
 - volume: 15ml
-- família olfativa: aromático fougère
 - referência olfativa: inspirado em Carolina Herrera 212 VIP Black
 
 29. AQUATIC GREEN
 - volume: 15ml
-- família olfativa: chipre amadeirado
 - referência olfativa: inspirado em Ralph Lauren Polo
 
 30. Y-NOT
 - volume: 15ml
-- família olfativa: aromático fougère cítrico
 - referência olfativa: inspirado em Yves Saint Laurent Y For Men
 
 31. BE MYSELF
 - volume: 15ml
-- família olfativa: amadeirado floral
 - referência olfativa: inspirado em Yves Saint Laurent Myself
 
 PERFUMES FEMININOS 15ML
 32. 412 SEXY
 - volume: 15ml
-- família olfativa: oriental floral
 - referência olfativa: inspirado em Carolina Herrera 212 Sexy
 
 33. LUXUOSA
 - volume: 15ml
-- família olfativa: oriental baunilha
 - referência olfativa: inspirado em Lancôme La Nuit Trésor
 
 34. FANTÁSTICA
 - volume: 15ml
-- família olfativa: floral frutado gourmet
 - referência olfativa: inspirado em Britney Spears Fantasy
 
 35. LADY FABULOSA
 - volume: 15ml
-- família olfativa: oriental floral
 - referência olfativa: inspirado em Carolina Herrera Lady Million Fabulous
 
 36. KHLOÉ
 - volume: 15ml
-- família olfativa: floral
 - referência olfativa: inspirado em Chloé
 
 37. BEST GIRL VELVET
 - volume: 15ml
-- família olfativa: floral frutado
 - referência olfativa: inspirado em Carolina Herrera Very Good Girl
 
 38. BLUE GIRL
 - volume: 15ml
-- família olfativa: floral frutado
 - referência olfativa: inspirado em Dolce & Gabbana Light Blue
 
 39. LIVRE
 - volume: 15ml
-- família olfativa: oriental fougère
 - referência olfativa: inspirado em Yves Saint Laurent Libre
 
 40. CELINA WOMAN
 - volume: 15ml
-- família olfativa: floral
 - referência olfativa: inspirado em Parfums de Marly Delina
 
 41. OLÍMPICA GIRL
 - volume: 15ml
-- família olfativa: oriental floral
 - referência olfativa: inspirado em Paco Rabanne Olympéa
 
 42. LA BELLA WOMAN
 - volume: 15ml
-- família olfativa: floral frutado gourmet
 - referência olfativa: inspirado em Lancôme La Vie Est Belle
 
 43. COCO PARIS
 - volume: 15ml
-- família olfativa: oriental floral
 - referência olfativa: inspirado em Chanel Coco Mademoiselle
 
 44. 412 VIP WOMAN
 - volume: 15ml
-- família olfativa: oriental adocicado
 - referência olfativa: inspirado em Carolina Herrera 212 VIP Woman
 
 45. GLAMOUROSA
 - volume: 15ml
-- família olfativa: chipre floral
 - referência olfativa: inspirado em Jean Paul Gaultier Scandal
 
 46. BEST GIRL
 - volume: 15ml
-- família olfativa: oriental floral
 - referência olfativa: inspirado em Carolina Herrera Good Girl
 
 47. 412 ROSE
 - volume: 15ml
-- família olfativa: floral frutado
 - referência olfativa: inspirado em Carolina Herrera 212 VIP Rosé
 
 48. LOVE RED
 - volume: 15ml
-- família olfativa: floral frutado
 - referência olfativa: inspirado em Cacharel Amor Amor
 
 49. GLAMOUR
 - volume: 15ml
-- família olfativa: floral amadeirado almiscarado
 - referência olfativa: inspirado em Paco Rabanne Fame
 
 50. MILY
 - volume: 15ml
-- família olfativa: floral
 - referência olfativa: inspirado em O Boticário Lily
 
 51. CHERRY WOMAN
 - volume: 15ml
-- família olfativa: oriental floral
 - referência olfativa: inspirado em Tom Ford Cherry
 
 52. ADORATTO
 - volume: 15ml
-- família olfativa: oriental baunilha
 - referência olfativa: inspirado em Dolce & Gabbana Devotion
 
 53. DUALITÉ
 - volume: 15ml
-- família olfativa: floral moderna
 - referência olfativa: inspirado em Prada Paradoxe
 
-BODY HAIR MIST / CORPO E CABELO
+BODY HAIR MIST
 54. BODY HAIR MIST
 - volume: 120ml
 - preço: R$ 69,80
 - uso: fragrância para corpo e cabelo
-- indicado para complementar kits, presente e autocuidado
 
-CUIDADOS / HIDRATANTES
 55. VELVET SENSATION
 - categoria: hidratante
 - peso: 200g
@@ -434,36 +392,329 @@ CUIDADOS / HIDRATANTES
 - preço: R$ 59,80
 - referência olfativa: inspirado em Jean Paul Gaultier Scandal
 
-CUIDADOS INFANTIS
 60. BODY HAIR MIST INFANTIL
 - volume: 120ml
 - preço: R$ 69,90
 - categoria: infantil
-- perfil: doce, encantador, delicado, com toque divertido
 
-REGRAS DE CURADORIA COM O CATÁLOGO
-- Só indicar produtos presentes nesta base.
-- Ao citar referência olfativa, usar a expressão "inspirado em".
-- Sempre mencionar ml ou g quando houver.
-- Quando fizer sentido, montar combos:
-  - perfume + hidratante
-  - perfume + body hair mist
-  - 2 perfumes 15ml
-  - 3 perfumes 15ml
-  - 1 perfume 100ml + complemento
-- Se o cliente estiver indeciso, sugerir no máximo 3 opções.
-- Se o cliente pedir algo sensual/noturno, priorizar famílias orientais, baunilha, ambaradas, intensas.
-- Se pedir algo fresco/leve/diurno, priorizar aromáticos, aquáticos, florais frutados.
-- Se pedir presente, oferecer kit e explicar o estilo.
+REGRAS IMPORTANTES DO CATÁLOGO
+- use apenas os nomes exatamente como aparecem aqui
+- quando existir referência olfativa, use a frase "inspirado em"
+- sempre mencionar ml ou g quando disponível
+- quando o preço exato estiver explícito aqui, use esse valor
+- quando o preço exato não estiver explícito aqui, não invente
+- se o cliente pedir valor de item sem preço explícito aqui, diga que vai fechar o valor correto na composição final
 `;
 
 const SYSTEM_PROMPT = `${BUSINESS_CONTEXT}
 
 ${CATALOG_CONTEXT}`;
 
+function LaboratoryOrb({ status }: { status: AppStatus }) {
+  return (
+    <div className="relative flex h-56 w-56 items-center justify-center rounded-full border border-[#545353]/12 bg-white/70 shadow-[0_20px_60px_rgba(84,83,83,0.08)] backdrop-blur-sm">
+      <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_50%_35%,rgba(84,83,83,0.08),transparent_58%)]" />
+      <div className="absolute inset-3 rounded-full border border-[#545353]/8" />
+      <div className="absolute inset-7 rounded-full border border-[#545353]/6" />
+
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className={`lab-core ${status}`} />
+      </div>
+
+      <div className="absolute bottom-12 left-1/2 h-16 w-[120px] -translate-x-1/2">
+        <div className="absolute left-0 top-4 h-10 w-7 rounded-b-[14px] rounded-t-[8px] border border-[#545353]/15 bg-white/60">
+          <div className={`liquid liquid-left ${status}`} />
+        </div>
+        <div className="absolute left-1/2 top-0 h-14 w-8 -translate-x-1/2 rounded-b-[16px] rounded-t-[9px] border border-[#545353]/15 bg-white/60">
+          <div className={`liquid liquid-center ${status}`} />
+        </div>
+        <div className="absolute right-0 top-5 h-9 w-7 rounded-b-[14px] rounded-t-[8px] border border-[#545353]/15 bg-white/60">
+          <div className={`liquid liquid-right ${status}`} />
+        </div>
+      </div>
+
+      <div className="absolute inset-0">
+        <span className={`bubble bubble-1 ${status}`} />
+        <span className={`bubble bubble-2 ${status}`} />
+        <span className={`bubble bubble-3 ${status}`} />
+        <span className={`bubble bubble-4 ${status}`} />
+        <span className={`bubble bubble-5 ${status}`} />
+        <span className={`bubble bubble-6 ${status}`} />
+      </div>
+
+      <div className="absolute inset-0">
+        <span className={`halo halo-a ${status}`} />
+        <span className={`halo halo-b ${status}`} />
+        <span className={`halo halo-c ${status}`} />
+      </div>
+
+      <style jsx>{`
+        .lab-core {
+          width: 84px;
+          height: 84px;
+          border-radius: 9999px;
+          background:
+            radial-gradient(circle at 35% 35%, rgba(255,255,255,0.75), transparent 28%),
+            radial-gradient(circle at 65% 70%, rgba(84,83,83,0.12), transparent 40%),
+            linear-gradient(180deg, rgba(84,83,83,0.10), rgba(84,83,83,0.03));
+          box-shadow:
+            inset 0 0 18px rgba(84,83,83,0.08),
+            0 0 24px rgba(84,83,83,0.06);
+          animation: coreIdle 6s ease-in-out infinite;
+          position: relative;
+        }
+
+        .lab-core::before,
+        .lab-core::after {
+          content: "";
+          position: absolute;
+          inset: -10px;
+          border-radius: 9999px;
+          border: 1px solid rgba(84,83,83,0.10);
+        }
+
+        .lab-core::before {
+          animation: ringSpin 9s linear infinite;
+        }
+
+        .lab-core::after {
+          inset: -18px;
+          animation: ringSpinReverse 12s linear infinite;
+          opacity: 0.45;
+        }
+
+        .lab-core.listening {
+          animation: coreListening 1.8s ease-in-out infinite;
+        }
+
+        .lab-core.thinking {
+          animation: coreThinking 2.4s ease-in-out infinite;
+        }
+
+        .lab-core.speaking {
+          animation: coreSpeaking 1.2s ease-in-out infinite;
+        }
+
+        .lab-core.error {
+          animation: coreError 1.6s ease-in-out infinite;
+        }
+
+        .liquid {
+          position: absolute;
+          left: 2px;
+          right: 2px;
+          bottom: 2px;
+          border-radius: 999px;
+          background: linear-gradient(180deg, rgba(84,83,83,0.26), rgba(84,83,83,0.11));
+          transition: all 300ms ease;
+        }
+
+        .liquid-left { height: 34%; }
+        .liquid-center { height: 42%; }
+        .liquid-right { height: 30%; }
+
+        .liquid.idle {
+          animation: liquidIdle 5s ease-in-out infinite;
+        }
+
+        .liquid.listening {
+          animation: liquidListening 1.5s ease-in-out infinite;
+        }
+
+        .liquid.thinking {
+          animation: liquidThinking 1.9s ease-in-out infinite;
+        }
+
+        .liquid.speaking {
+          animation: liquidSpeaking 0.9s ease-in-out infinite;
+        }
+
+        .liquid.error {
+          animation: liquidError 1.3s ease-in-out infinite;
+        }
+
+        .bubble {
+          position: absolute;
+          display: block;
+          width: 8px;
+          height: 8px;
+          border-radius: 9999px;
+          background: rgba(84,83,83,0.16);
+          opacity: 0;
+        }
+
+        .bubble-1 { left: 30%; bottom: 33%; animation-delay: 0s; }
+        .bubble-2 { left: 39%; bottom: 27%; animation-delay: 0.6s; }
+        .bubble-3 { left: 48%; bottom: 31%; animation-delay: 1.1s; }
+        .bubble-4 { left: 57%; bottom: 29%; animation-delay: 1.5s; }
+        .bubble-5 { left: 66%; bottom: 35%; animation-delay: 0.9s; }
+        .bubble-6 { left: 51%; bottom: 24%; animation-delay: 1.8s; }
+
+        .bubble.idle {
+          animation: bubbleFloat 7s ease-in-out infinite;
+        }
+
+        .bubble.listening {
+          animation: bubbleFloat 2s ease-in-out infinite;
+        }
+
+        .bubble.thinking {
+          animation: bubbleFloatThinking 1.9s ease-in-out infinite;
+        }
+
+        .bubble.speaking {
+          animation: bubbleFloatSpeaking 1.1s ease-in-out infinite;
+        }
+
+        .bubble.error {
+          animation: bubbleError 1.4s ease-in-out infinite;
+        }
+
+        .halo {
+          position: absolute;
+          inset: 22px;
+          border-radius: 9999px;
+          border: 1px solid rgba(84,83,83,0.08);
+          opacity: 0;
+        }
+
+        .halo-a { animation-delay: 0s; }
+        .halo-b { animation-delay: 0.5s; }
+        .halo-c { animation-delay: 1s; }
+
+        .halo.listening {
+          animation: haloPulse 1.6s ease-out infinite;
+        }
+
+        .halo.thinking {
+          animation: haloThinking 2.2s ease-out infinite;
+        }
+
+        .halo.speaking {
+          animation: haloSpeaking 1s ease-out infinite;
+        }
+
+        .halo.error {
+          animation: haloError 1.5s ease-out infinite;
+        }
+
+        @keyframes coreIdle {
+          0%, 100% { transform: scale(0.98) rotate(0deg); }
+          50% { transform: scale(1.03) rotate(6deg); }
+        }
+
+        @keyframes coreListening {
+          0%, 100% { transform: scale(0.98); }
+          50% { transform: scale(1.08); }
+        }
+
+        @keyframes coreThinking {
+          0%, 100% { transform: scale(0.98) rotate(0deg); }
+          25% { transform: scale(1.04) rotate(8deg); }
+          50% { transform: scale(1.08) rotate(-8deg); }
+          75% { transform: scale(1.03) rotate(4deg); }
+        }
+
+        @keyframes coreSpeaking {
+          0%, 100% { transform: scale(1); }
+          25% { transform: scale(1.06); }
+          50% { transform: scale(0.98); }
+          75% { transform: scale(1.07); }
+        }
+
+        @keyframes coreError {
+          0%, 100% { transform: translateX(0); }
+          25% { transform: translateX(-3px); }
+          50% { transform: translateX(3px); }
+          75% { transform: translateX(-2px); }
+        }
+
+        @keyframes ringSpin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+
+        @keyframes ringSpinReverse {
+          from { transform: rotate(360deg); }
+          to { transform: rotate(0deg); }
+        }
+
+        @keyframes liquidIdle {
+          0%, 100% { transform: scaleY(1); }
+          50% { transform: scaleY(1.08); }
+        }
+
+        @keyframes liquidListening {
+          0%, 100% { transform: scaleY(0.95); }
+          50% { transform: scaleY(1.22); }
+        }
+
+        @keyframes liquidThinking {
+          0%, 100% { transform: scaleY(1) translateY(0); }
+          33% { transform: scaleY(1.28) translateY(-1px); }
+          66% { transform: scaleY(0.92) translateY(1px); }
+        }
+
+        @keyframes liquidSpeaking {
+          0%, 100% { transform: scaleY(0.92); }
+          50% { transform: scaleY(1.34); }
+        }
+
+        @keyframes liquidError {
+          0%, 100% { transform: scaleY(1); opacity: 0.85; }
+          50% { transform: scaleY(1.18); opacity: 1; }
+        }
+
+        @keyframes bubbleFloat {
+          0% { transform: translateY(0) scale(0.7); opacity: 0; }
+          20% { opacity: 0.5; }
+          100% { transform: translateY(-85px) scale(1.05); opacity: 0; }
+        }
+
+        @keyframes bubbleFloatThinking {
+          0% { transform: translateY(0) scale(0.7); opacity: 0; }
+          15% { opacity: 0.8; }
+          100% { transform: translateY(-100px) scale(1.12); opacity: 0; }
+        }
+
+        @keyframes bubbleFloatSpeaking {
+          0% { transform: translateY(0) scale(0.6); opacity: 0; }
+          15% { opacity: 0.9; }
+          100% { transform: translateY(-72px) scale(0.95); opacity: 0; }
+        }
+
+        @keyframes bubbleError {
+          0% { transform: translateY(0) scale(0.6); opacity: 0; }
+          20% { opacity: 0.45; }
+          100% { transform: translateY(-45px) scale(0.8); opacity: 0; }
+        }
+
+        @keyframes haloPulse {
+          0% { transform: scale(0.85); opacity: 0.22; }
+          100% { transform: scale(1.18); opacity: 0; }
+        }
+
+        @keyframes haloThinking {
+          0% { transform: scale(0.9) rotate(0deg); opacity: 0.18; }
+          100% { transform: scale(1.22) rotate(18deg); opacity: 0; }
+        }
+
+        @keyframes haloSpeaking {
+          0% { transform: scale(0.92); opacity: 0.28; }
+          100% { transform: scale(1.12); opacity: 0; }
+        }
+
+        @keyframes haloError {
+          0% { transform: scale(0.94); opacity: 0.22; }
+          100% { transform: scale(1.04); opacity: 0; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 export default function Page() {
   const [status, setStatus] = useState<AppStatus>("idle");
-  const [displayText, setDisplayText] = useState("SÉLÈNE ATELIER");
   const [errorMsg, setErrorMsg] = useState("");
 
   const audioCtx = useRef<AudioContext | null>(null);
@@ -500,7 +751,6 @@ export default function Page() {
 
   const setIdleState = () => {
     setStatus("idle");
-    setDisplayText("SÉLÈNE ATELIER");
   };
 
   const setErrorState = (message: string) => {
@@ -616,7 +866,6 @@ export default function Page() {
 
       recorder.start();
       setStatus("listening");
-      setDisplayText("Ouvindo você...");
     } catch (error) {
       console.error("Erro ao acessar microfone:", error);
       cleanupMediaStream();
@@ -631,14 +880,13 @@ export default function Page() {
     if (!hasAudio) return;
 
     setStatus("thinking");
-    setDisplayText(`Explorando ${label}...`);
 
     await callGemini([
       {
         role: "user",
         parts: [
           {
-            text: `O cliente clicou na sugestão: ${label}. Atenda normalmente, com voz natural, e conduza o fluxo comercial sem soar robótica.`,
+            text: `O cliente clicou na sugestão: ${label}. Atenda com voz natural, conduza a curadoria de forma elegante, faça apenas uma pergunta por vez e não seja prolixa.`,
           },
         ],
       },
@@ -661,7 +909,6 @@ export default function Page() {
 
   const processAudio = async (blob: Blob, mimeType: string) => {
     setStatus("thinking");
-    setDisplayText("Interpretando...");
 
     try {
       const base64 = await blobToBase64(blob);
@@ -671,7 +918,7 @@ export default function Page() {
           role: "user",
           parts: [
             {
-              text: "Responda ao áudio do cliente como Seline, seguindo o fluxo de curadoria e as regras comerciais do catálogo.",
+              text: "Responda ao áudio do cliente como Selina, seguindo rigorosamente as regras de curadoria, brevidade, catálogo e condução comercial.",
             },
             { inlineData: { mimeType, data: base64 } },
           ],
@@ -707,7 +954,9 @@ export default function Page() {
             },
             generationConfig: {
               responseMimeType: "application/json",
-              temperature: 0.65,
+              temperature: 0.35,
+              topP: 0.8,
+              maxOutputTokens: 220,
               thinkingConfig: {
                 thinkingLevel: "low",
               },
@@ -740,7 +989,6 @@ export default function Page() {
 
       history.current.push(contents[0], data.candidates[0].content);
 
-      setDisplayText(result.status || "Curando sua essência...");
       await generateVoice(result.texto);
     } catch (error) {
       console.error("Erro em callGemini:", error);
@@ -826,6 +1074,7 @@ export default function Page() {
       }
 
       const float32 = new Float32Array(bytes.length);
+
       for (let i = 0; i < bytes.length; i++) {
         float32[i] = bytes[i] / 32768;
       }
@@ -838,7 +1087,6 @@ export default function Page() {
       source.connect(audioCtx.current.destination);
 
       setStatus("speaking");
-      setDisplayText("Seline falando...");
 
       source.onended = () => {
         setIdleState();
@@ -847,7 +1095,7 @@ export default function Page() {
       source.start(0);
     } catch (error) {
       console.error("Erro ao reproduzir áudio:", error);
-      setErrorState("Falha ao reproduzir o áudio da Seline.");
+      setErrorState("Falha ao reproduzir o áudio da Selina.");
     }
   };
 
@@ -864,46 +1112,14 @@ export default function Page() {
       </header>
 
       <main className="flex flex-1 flex-col items-center justify-center gap-8 overflow-hidden px-6">
-        <div className="relative flex items-center justify-center">
-          {status === "speaking" && (
-            <div className="absolute flex h-full w-full items-center justify-center gap-1 opacity-30">
-              {[...Array(20)].map((_, i) => (
-                <div
-                  key={i}
-                  className="w-0.5 animate-pulse rounded-full bg-[#545353]"
-                  style={{
-                    height: `${Math.random() * 50 + 20}px`,
-                    animationDelay: `${i * 0.05}s`,
-                  }}
-                />
-              ))}
-            </div>
-          )}
+        <LaboratoryOrb status={status} />
 
-          <div
-            className={`z-10 flex h-52 w-52 flex-col items-center justify-center rounded-full border border-[#545353]/20 bg-white/40 backdrop-blur-sm transition-all duration-700 ${
-              status === "speaking"
-                ? "scale-105 border-[#545353]/40 shadow-xl"
-                : "shadow-sm"
-            }`}
-          >
-            {status === "thinking" && (
-              <Loader2 className="mb-3 h-6 w-6 animate-spin opacity-30" />
-            )}
-
-            {status === "listening" && (
-              <div className="mb-3 h-2 w-2 animate-ping rounded-full bg-red-400" />
-            )}
-
-            {status === "error" && (
-              <AlertCircle className="mb-3 h-6 w-6 text-red-300" />
-            )}
-
-            <p className="px-8 text-center text-[9px] font-bold uppercase leading-relaxed tracking-[0.3em]">
-              {status === "error" ? errorMsg : displayText}
-            </p>
+        {status === "error" && (
+          <div className="flex max-w-sm items-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-[11px] text-red-500">
+            <AlertCircle size={14} />
+            <span>{errorMsg}</span>
           </div>
-        </div>
+        )}
 
         <div className="grid w-full max-w-sm flex-none grid-cols-2 gap-3">
           {suggestions.map((item, idx) => (
