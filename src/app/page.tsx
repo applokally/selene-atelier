@@ -7,11 +7,10 @@ const SYSTEM_PROMPT = `Você é Seline, consultora técnica de elite da SÉLÈNE
 Sua missão é realizar uma curadoria de luxo.
 
 REGRAS CRÍTICAS:
-1. FALE SEMPRE POR ÁUDIO: Sua resposta deve ser apenas voz.
-2. FLUXO: Primeiro, cumprimente e pergunte o NOME. Nunca ofereça produtos antes do nome.
-3. ESTILO: Use tom de voz elegante e calmo (persona Leda).
-4. RESPOSTA EM JSON: Você deve responder estritamente neste formato JSON:
-{"texto": "sua fala aqui", "status": "curando sua essência...", "passo": 1}`;
+1. RESPOSTA 100% ÁUDIO: Sua fala deve ser apenas voz.
+2. FLUXO: Cumprimente e pergunte o NOME do cliente primeiro. 
+3. ESTILO: Elegante e calmo.
+4. FORMATO: Responda APENAS em JSON: {"texto": "sua fala aqui", "status": "curando sua essência...", "passo": 1}`;
 
 export default function Page() {
   const [status, setStatus] = useState<'idle' | 'listening' | 'thinking' | 'speaking' | 'error'>('idle');
@@ -23,7 +22,7 @@ export default function Page() {
   const chunks = useRef<Blob[]>([]);
   const history = useRef<any[]>([]);
 
-  // Captura a chave da Vercel
+  // Captura a chave de ambiente (NEXT_PUBLIC_ garante que o navegador a veja)
   const apiKey = process.env.NEXT_PUBLIC_GEMINI_KEY || "";
 
   const suggestions = [
@@ -33,19 +32,27 @@ export default function Page() {
     { icon: <Heart size={14} />, label: "Linha Intense" },
   ];
 
-  const initAudioContext = async () => {
-    if (!audioCtx.current) {
-      const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
-      audioCtx.current = new AudioContextClass({ sampleRate: 24000 });
-    }
-    if (audioCtx.current?.state === 'suspended') {
-      await audioCtx.current.resume();
+  // Função vital para "acordar" o áudio no telemóvel
+  const initAudio = async () => {
+    try {
+      if (!audioCtx.current) {
+        const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+        audioCtx.current = new AudioContextClass({ sampleRate: 24000 });
+      }
+      if (audioCtx.current.state === 'suspended') {
+        await audioCtx.current.resume();
+      }
+      return true;
+    } catch (e) {
+      console.error("Falha ao iniciar áudio:", e);
+      return false;
     }
   };
 
   const toggleMic = async () => {
     setErrorMsg('');
-    await initAudioContext();
+    const hasAudio = await initAudio();
+    if (!hasAudio) return;
 
     if (status === 'listening') {
       mediaRecorder.current?.stop();
@@ -60,9 +67,9 @@ export default function Page() {
 
       recorder.ondataavailable = (e) => chunks.current.push(e.data);
       recorder.onstop = () => {
-        const blob = new Blob(chunks.current, { type: 'audio/wav' });
-        processAudio(blob);
-        stream.getTracks().forEach(t => t.stop());
+        const audioBlob = new Blob(chunks.current, { type: 'audio/wav' });
+        processAudio(audioBlob);
+        stream.getTracks().forEach(track => track.stop());
       };
 
       recorder.start();
@@ -70,13 +77,20 @@ export default function Page() {
       setDisplayText('Ouvindo você...');
     } catch (err) {
       setStatus('error');
-      setErrorMsg('Microfone bloqueado.');
+      setErrorMsg('Microfone negado.');
     }
+  };
+
+  const handleSuggestion = async (label: string) => {
+    await initAudio();
+    setStatus('thinking');
+    setDisplayText(`Explorando ${label}...`);
+    callGemini([{ role: 'user', parts: [{ text: `Iniciando curadoria: ${label}` }] }]);
   };
 
   const processAudio = async (blob: Blob) => {
     setStatus('thinking');
-    setDisplayText('Interpretando áudio...');
+    setDisplayText('Interpretando...');
     const reader = new FileReader();
     reader.readAsDataURL(blob);
     reader.onloadend = async () => {
@@ -84,28 +98,22 @@ export default function Page() {
       callGemini([{ 
         role: 'user', 
         parts: [
-          { text: "O cliente enviou um áudio. Responda seguindo as regras da Seline." }, 
+          { text: "Responda ao áudio do cliente como Seline." }, 
           { inlineData: { mimeType: "audio/wav", data: base64 } }
         ] 
       }]);
     };
   };
 
-  const handleSuggestion = async (label: string) => {
-    await initAudioContext();
-    setStatus('thinking');
-    setDisplayText(`Iniciando: ${label}`);
-    callGemini([{ role: 'user', parts: [{ text: `Desejo uma curadoria focada em: ${label}` }] }]);
-  };
-
   const callGemini = async (contents: any[]) => {
     if (!apiKey) {
       setStatus('error');
-      setErrorMsg('Configurar API Key');
+      setErrorMsg('Chave API não configurada');
       return;
     }
+
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -114,53 +122,67 @@ export default function Page() {
           generationConfig: { responseMimeType: "application/json" }
         })
       });
+
+      if (!response.ok) throw new Error(`Status ${response.status}`);
+
       const data = await response.json();
       const rawText = data.candidates[0].content.parts[0].text;
       const cleanJson = rawText.replace(/```json|```/g, "").trim();
       const result = JSON.parse(cleanJson);
+
       history.current.push(contents[0], data.candidates[0].content);
       setDisplayText(result.status || 'SÉLÈNE');
-      await speak(result.texto);
-    } catch (err) {
+      await generateVoice(result.texto);
+    } catch (err: any) {
       setStatus('error');
-      setErrorMsg('Erro na conexão.');
+      setErrorMsg(`Falha: ${err.message}`);
     }
   };
 
-  const speak = async (text: string) => {
+  const generateVoice = async (text: string) => {
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text }] }],
-          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Leda" } } } }
+          generationConfig: { 
+            responseModalities: ["AUDIO"], 
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Leda" } } } 
+          }
         })
       });
-      const data = await response.json();
-      const pcmData = data.candidates[0].content.parts[0].inlineData.data;
-      playOutput(pcmData);
-    } catch (err) {
+      const data = await res.json();
+      const pcm = data.candidates[0].content.parts[0].inlineData.data;
+      playAudio(pcm);
+    } catch (e) {
       setStatus('idle');
       setDisplayText('SÉLÈNE ATELIER');
     }
   };
 
-  const playOutput = (base64: string) => {
+  const playAudio = (base64: string) => {
     if (!audioCtx.current) return;
     const binary = atob(base64);
     const bytes = new Int16Array(binary.length / 2);
-    for (let i = 0; i < bytes.length; i++) bytes[i] = (binary.charCodeAt(i * 2) & 0xFF) | (binary.charCodeAt(i * 2 + 1) << 8);
+    for (let i = 0; i < bytes.length; i++) {
+      bytes[i] = (binary.charCodeAt(i * 2) & 0xFF) | (binary.charCodeAt(i * 2 + 1) << 8);
+    }
     const float32 = new Float32Array(bytes.length);
     for (let i = 0; i < bytes.length; i++) float32[i] = bytes[i] / 32768.0;
+    
     const buffer = audioCtx.current.createBuffer(1, float32.length, 24000);
     buffer.getChannelData(0).set(float32);
     const source = audioCtx.current.createBufferSource();
     source.buffer = buffer;
     source.connect(audioCtx.current.destination);
+    
     setStatus('speaking');
     setDisplayText('Seline falando...');
-    source.onended = () => { setStatus('idle'); setDisplayText('SÉLÈNE ATELIER'); };
+    source.onended = () => {
+      setStatus('idle');
+      setDisplayText('SÉLÈNE ATELIER');
+    };
     source.start(0);
   };
 
