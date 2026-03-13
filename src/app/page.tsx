@@ -23,7 +23,7 @@ RESPOSTA OBRIGATÓRIA EM JSON: {"texto": "fala da seline aqui", "status": "enten
 
 export default function SeleneApp() {
   const [status, setStatus] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
-  const [displayText, setDisplayText] = useState('SÉLÈNE ATELIER');
+  const [displayText, setDisplayText] = useState('SÉLÈNE ATELIER. ');
   const [showOrder, setShowOrder] = useState(false);
   
   const audioCtx = useRef<AudioContext | null>(null);
