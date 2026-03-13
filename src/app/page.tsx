@@ -1,235 +1,513 @@
 "use client";
 
-import React, { useState, useRef } from 'react';
-import { Mic, MicOff, Loader2, Sparkles, Wind, Flower2, Heart, AlertCircle } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Mic,
+  MicOff,
+  Loader2,
+  Sparkles,
+  Wind,
+  Flower2,
+  Heart,
+  AlertCircle,
+} from "lucide-react";
+
+type AppStatus = "idle" | "listening" | "thinking" | "speaking" | "error";
+
+type GeminiHistoryPart =
+  | { text: string }
+  | { inlineData: { mimeType: string; data: string } };
+
+type GeminiHistoryItem = {
+  role: "user" | "model";
+  parts: GeminiHistoryPart[];
+};
+
+type SelineResponse = {
+  texto: string;
+  status?: string;
+  passo?: number;
+};
 
 const SYSTEM_PROMPT = `Você é Seline, consultora técnica de elite da SÉLÈNE (Moments Paris).
-Sua missão é realizar uma curadoria de luxo.
+Sua missão é realizar uma curadoria de luxo, com fala elegante, técnica, acolhedora e minimalista.
 
 REGRAS CRÍTICAS:
-1. RESPOSTA 100% ÁUDIO: Sua fala deve ser apenas voz.
-2. FLUXO: Cumprimente e pergunte o NOME do cliente primeiro. 
-3. ESTILO: Elegante e calmo.
-4. FORMATO: Responda APENAS em JSON: {"texto": "sua fala aqui", "status": "curando sua essência...", "passo": 1}`;
+1. RESPOSTA 100% ÁUDIO: você jamais conversa por chat; sua resposta será convertida em voz.
+2. FLUXO OBRIGATÓRIO: no primeiro contato, cumprimente e pergunte primeiro o NOME do cliente.
+3. SÓ AVANCE para curadoria após identificação do nome.
+4. OFEREÇA quando fizer sentido: 25% OFF acima de R$149,90.
+5. ESTILO: frases curtas, elegantes, naturais e calmas.
+6. FORMATO: responda APENAS em JSON válido, sem markdown, sem crases, sem texto extra.
+
+FORMATO EXATO:
+{"texto":"sua fala aqui","status":"curando sua essência...","passo":1}`;
+
+const CHAT_MODEL = "gemini-2.0-flash";
+const TTS_MODEL = "gemini-2.5-flash-preview-tts";
 
 export default function Page() {
-  const [status, setStatus] = useState<'idle' | 'listening' | 'thinking' | 'speaking' | 'error'>('idle');
-  const [displayText, setDisplayText] = useState('SÉLÈNE ATELIER');
-  const [errorMsg, setErrorMsg] = useState('');
-  
+  const [status, setStatus] = useState<AppStatus>("idle");
+  const [displayText, setDisplayText] = useState("SÉLÈNE ATELIER");
+  const [errorMsg, setErrorMsg] = useState("");
+
   const audioCtx = useRef<AudioContext | null>(null);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
+  const mediaStream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
-  const history = useRef<any[]>([]);
+  const history = useRef<GeminiHistoryItem[]>([]);
 
-  // Captura a chave de ambiente (NEXT_PUBLIC_ garante que o navegador a veja)
-  const apiKey = process.env.NEXT_PUBLIC_GEMINI_KEY || "";
+  const apiKey = process.env.NEXT_PUBLIC_GEMINI_KEY ?? "";
 
-  const suggestions = [
-    { icon: <Wind size={14} />, label: "Perfumes Frescos" },
-    { icon: <Flower2 size={14} />, label: "Florais Nobres" },
-    { icon: <Sparkles size={14} />, label: "Cuidados Faciais" },
-    { icon: <Heart size={14} />, label: "Linha Intense" },
-  ];
+  const suggestions = useMemo(
+    () => [
+      { icon: <Wind size={14} />, label: "Perfumes Frescos" },
+      { icon: <Flower2 size={14} />, label: "Florais Nobres" },
+      { icon: <Sparkles size={14} />, label: "Cuidados Faciais" },
+      { icon: <Heart size={14} />, label: "Linha Intense" },
+    ],
+    []
+  );
 
-  // Função vital para "acordar" o áudio no telemóvel
-  const initAudio = async () => {
+  useEffect(() => {
+    return () => {
+      try {
+        mediaRecorder.current?.stop();
+      } catch {}
+
+      mediaStream.current?.getTracks().forEach((track) => track.stop());
+
+      if (audioCtx.current && audioCtx.current.state !== "closed") {
+        void audioCtx.current.close();
+      }
+    };
+  }, []);
+
+  const setIdleState = () => {
+    setStatus("idle");
+    setDisplayText("SÉLÈNE ATELIER");
+  };
+
+  const setErrorState = (message: string) => {
+    setStatus("error");
+    setErrorMsg(message);
+  };
+
+  const initAudio = async (): Promise<boolean> => {
     try {
       if (!audioCtx.current) {
-        const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+        const AudioContextClass =
+          window.AudioContext ||
+          (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+            .webkitAudioContext;
+
+        if (!AudioContextClass) {
+          setErrorState("Áudio não suportado neste navegador.");
+          return false;
+        }
+
         audioCtx.current = new AudioContextClass({ sampleRate: 24000 });
       }
-      if (audioCtx.current.state === 'suspended') {
+
+      if (audioCtx.current.state === "suspended") {
         await audioCtx.current.resume();
       }
+
       return true;
-    } catch (e) {
-      console.error("Falha ao iniciar áudio:", e);
+    } catch (error) {
+      console.error("Falha ao iniciar áudio:", error);
+      setErrorState("Não foi possível iniciar o áudio.");
       return false;
     }
   };
 
+  const getRecorderMimeType = (): string => {
+    const mimeTypes = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+      "audio/ogg;codecs=opus",
+    ];
+
+    for (const mimeType of mimeTypes) {
+      if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(mimeType)) {
+        return mimeType;
+      }
+    }
+
+    return "";
+  };
+
+  const cleanupMediaStream = () => {
+    mediaStream.current?.getTracks().forEach((track) => track.stop());
+    mediaStream.current = null;
+    mediaRecorder.current = null;
+  };
+
   const toggleMic = async () => {
-    setErrorMsg('');
+    setErrorMsg("");
+
     const hasAudio = await initAudio();
     if (!hasAudio) return;
 
-    if (status === 'listening') {
+    if (status === "listening") {
       mediaRecorder.current?.stop();
       return;
     }
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
+      mediaStream.current = stream;
+
+      const mimeType = getRecorderMimeType();
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+
       mediaRecorder.current = recorder;
       chunks.current = [];
 
-      recorder.ondataavailable = (e) => chunks.current.push(e.data);
-      recorder.onstop = () => {
-        const audioBlob = new Blob(chunks.current, { type: 'audio/wav' });
-        processAudio(audioBlob);
-        stream.getTracks().forEach(track => track.stop());
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data.size > 0) {
+          chunks.current.push(event.data);
+        }
+      };
+
+      recorder.onerror = (event) => {
+        console.error("Erro no MediaRecorder:", event);
+        cleanupMediaStream();
+        setErrorState("Falha ao gravar o áudio.");
+      };
+
+      recorder.onstop = async () => {
+        try {
+          const actualMimeType =
+            recorder.mimeType && recorder.mimeType.trim() !== ""
+              ? recorder.mimeType
+              : "audio/webm";
+
+          const audioBlob = new Blob(chunks.current, { type: actualMimeType });
+          cleanupMediaStream();
+          await processAudio(audioBlob, actualMimeType);
+        } catch (error) {
+          console.error("Erro ao finalizar gravação:", error);
+          cleanupMediaStream();
+          setErrorState("Falha ao processar a gravação.");
+        }
       };
 
       recorder.start();
-      setStatus('listening');
-      setDisplayText('Ouvindo você...');
-    } catch (err) {
-      setStatus('error');
-      setErrorMsg('Microfone negado.');
+      setStatus("listening");
+      setDisplayText("Ouvindo você...");
+    } catch (error) {
+      console.error("Erro ao acessar microfone:", error);
+      cleanupMediaStream();
+      setErrorState("Microfone negado ou indisponível.");
     }
   };
 
   const handleSuggestion = async (label: string) => {
-    await initAudio();
-    setStatus('thinking');
+    setErrorMsg("");
+
+    const hasAudio = await initAudio();
+    if (!hasAudio) return;
+
+    setStatus("thinking");
     setDisplayText(`Explorando ${label}...`);
-    callGemini([{ role: 'user', parts: [{ text: `Iniciando curadoria: ${label}` }] }]);
+
+    await callGemini([
+      {
+        role: "user",
+        parts: [{ text: `Iniciando curadoria para a categoria: ${label}.` }],
+      },
+    ]);
   };
 
-  const processAudio = async (blob: Blob) => {
-    setStatus('thinking');
-    setDisplayText('Interpretando...');
-    const reader = new FileReader();
-    reader.readAsDataURL(blob);
-    reader.onloadend = async () => {
-      const base64 = (reader.result as string).split(',')[1];
-      callGemini([{ 
-        role: 'user', 
-        parts: [
-          { text: "Responda ao áudio do cliente como Seline." }, 
-          { inlineData: { mimeType: "audio/wav", data: base64 } }
-        ] 
-      }]);
-    };
+  const blobToBase64 = async (blob: Blob): Promise<string> => {
+    const arrayBuffer = await blob.arrayBuffer();
+    let binary = "";
+    const bytes = new Uint8Array(arrayBuffer);
+    const chunkSize = 0x8000;
+
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const slice = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode(...slice);
+    }
+
+    return btoa(binary);
   };
 
-  const callGemini = async (contents: any[]) => {
+  const processAudio = async (blob: Blob, mimeType: string) => {
+    setStatus("thinking");
+    setDisplayText("Interpretando...");
+
+    try {
+      const base64 = await blobToBase64(blob);
+
+      await callGemini([
+        {
+          role: "user",
+          parts: [
+            { text: "Responda ao áudio do cliente como Seline." },
+            { inlineData: { mimeType, data: base64 } },
+          ],
+        },
+      ]);
+    } catch (error) {
+      console.error("Erro ao converter áudio:", error);
+      setErrorState("Falha ao preparar o áudio enviado.");
+    }
+  };
+
+  const extractJsonText = (raw: string): SelineResponse => {
+    const clean = raw.replace(/```json|```/gi, "").trim();
+    return JSON.parse(clean) as SelineResponse;
+  };
+
+  const callGemini = async (contents: GeminiHistoryItem[]) => {
     if (!apiKey) {
-      setStatus('error');
-      setErrorMsg('Chave API não configurada');
+      setErrorState("Chave API não configurada na Vercel.");
       return;
     }
 
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [...history.current, ...contents],
-          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-          generationConfig: { responseMimeType: "application/json" }
-        })
-      });
-
-      if (!response.ok) throw new Error(`Status ${response.status}`);
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${CHAT_MODEL}:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [...history.current, ...contents],
+            systemInstruction: {
+              parts: [{ text: SYSTEM_PROMPT }],
+            },
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: 0.7,
+            },
+          }),
+        }
+      );
 
       const data = await response.json();
-      const rawText = data.candidates[0].content.parts[0].text;
-      const cleanJson = rawText.replace(/```json|```/g, "").trim();
-      const result = JSON.parse(cleanJson);
+
+      if (!response.ok) {
+        const apiMessage =
+          data?.error?.message || `Falha no Gemini (status ${response.status}).`;
+        throw new Error(apiMessage);
+      }
+
+      const rawText: string | undefined = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (!rawText) {
+        throw new Error("O Gemini não retornou texto válido.");
+      }
+
+      const result = extractJsonText(rawText);
+
+      if (!result?.texto) {
+        throw new Error("O JSON retornado não contém o campo 'texto'.");
+      }
 
       history.current.push(contents[0], data.candidates[0].content);
-      setDisplayText(result.status || 'SÉLÈNE');
+
+      setDisplayText(result.status || "Curando sua essência...");
       await generateVoice(result.texto);
-    } catch (err: any) {
-      setStatus('error');
-      setErrorMsg(`Falha: ${err.message}`);
+    } catch (error) {
+      console.error("Erro em callGemini:", error);
+      const message =
+        error instanceof Error ? error.message : "Erro inesperado ao consultar a IA.";
+      setErrorState(message);
     }
   };
 
   const generateVoice = async (text: string) => {
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text }] }],
-          generationConfig: { 
-            responseModalities: ["AUDIO"], 
-            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Leda" } } } 
-          }
-        })
-      });
-      const data = await res.json();
-      const pcm = data.candidates[0].content.parts[0].inlineData.data;
-      playAudio(pcm);
-    } catch (e) {
-      setStatus('idle');
-      setDisplayText('SÉLÈNE ATELIER');
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [{ text }],
+              },
+            ],
+            generationConfig: {
+              responseModalities: ["AUDIO"],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: {
+                    voiceName: "Leda",
+                  },
+                },
+              },
+            },
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        const apiMessage =
+          data?.error?.message || `Falha no TTS (status ${response.status}).`;
+        throw new Error(apiMessage);
+      }
+
+      const inlineData = data?.candidates?.[0]?.content?.parts?.find(
+        (part: { inlineData?: { data?: string; mimeType?: string } }) => part.inlineData?.data
+      )?.inlineData;
+
+      const pcmBase64: string | undefined = inlineData?.data;
+
+      if (!pcmBase64) {
+        throw new Error("O TTS não retornou áudio.");
+      }
+
+      playAudio(pcmBase64);
+    } catch (error) {
+      console.error("Erro em generateVoice:", error);
+      const message =
+        error instanceof Error ? error.message : "Falha inesperada ao gerar voz.";
+      setErrorState(message);
     }
   };
 
   const playAudio = (base64: string) => {
-    if (!audioCtx.current) return;
-    const binary = atob(base64);
-    const bytes = new Int16Array(binary.length / 2);
-    for (let i = 0; i < bytes.length; i++) {
-      bytes[i] = (binary.charCodeAt(i * 2) & 0xFF) | (binary.charCodeAt(i * 2 + 1) << 8);
+    if (!audioCtx.current) {
+      setErrorState("Contexto de áudio não inicializado.");
+      return;
     }
-    const float32 = new Float32Array(bytes.length);
-    for (let i = 0; i < bytes.length; i++) float32[i] = bytes[i] / 32768.0;
-    
-    const buffer = audioCtx.current.createBuffer(1, float32.length, 24000);
-    buffer.getChannelData(0).set(float32);
-    const source = audioCtx.current.createBufferSource();
-    source.buffer = buffer;
-    source.connect(audioCtx.current.destination);
-    
-    setStatus('speaking');
-    setDisplayText('Seline falando...');
-    source.onended = () => {
-      setStatus('idle');
-      setDisplayText('SÉLÈNE ATELIER');
-    };
-    source.start(0);
+
+    try {
+      const binary = atob(base64);
+      const bytes = new Int16Array(binary.length / 2);
+
+      for (let i = 0; i < bytes.length; i++) {
+        bytes[i] =
+          (binary.charCodeAt(i * 2) & 0xff) |
+          (binary.charCodeAt(i * 2 + 1) << 8);
+      }
+
+      const float32 = new Float32Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) {
+        float32[i] = bytes[i] / 32768;
+      }
+
+      const buffer = audioCtx.current.createBuffer(1, float32.length, 24000);
+      buffer.getChannelData(0).set(float32);
+
+      const source = audioCtx.current.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioCtx.current.destination);
+
+      setStatus("speaking");
+      setDisplayText("Seline falando...");
+
+      source.onended = () => {
+        setIdleState();
+      };
+
+      source.start(0);
+    } catch (error) {
+      console.error("Erro ao reproduzir áudio:", error);
+      setErrorState("Falha ao reproduzir o áudio da Seline.");
+    }
   };
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-white text-[#545353] font-sans overflow-hidden">
-      <header className="pt-10 pb-4 flex flex-col items-center flex-none">
-        <h1 className="text-4xl font-light tracking-[0.4em]">SÉLÈNE</h1>
-        <div className="w-48 h-px bg-[#545353]/20 my-4"></div>
-        <p className="text-[10px] font-medium uppercase tracking-[0.15em] whitespace-nowrap px-4 text-center">
-          Curadoria Cosmética, Saúde & Bem Estar
-        </p>
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-white font-sans text-[#545353]">
+      <header className="flex-none pb-4 pt-10">
+        <div className="flex flex-col items-center">
+          <h1 className="text-4xl font-light tracking-[0.4em]">SÉLÈNE</h1>
+          <div className="my-4 h-px w-48 bg-[#545353]/20" />
+          <p className="px-4 text-center text-[10px] font-medium uppercase tracking-[0.15em] whitespace-nowrap">
+            Curadoria Cosmética, Saúde &amp; Bem Estar
+          </p>
+        </div>
       </header>
 
-      <main className="flex-1 flex flex-col items-center justify-center px-6 gap-8 overflow-hidden">
+      <main className="flex flex-1 flex-col items-center justify-center gap-8 overflow-hidden px-6">
         <div className="relative flex items-center justify-center">
-          {status === 'speaking' && (
-            <div className="absolute flex items-center justify-center gap-1 w-full h-full opacity-30">
-               {[...Array(20)].map((_, i) => (
-                 <div key={i} className="w-0.5 bg-[#545353] rounded-full animate-pulse" style={{ height: `${Math.random() * 50 + 20}px`, animationDelay: `${i * 0.05}s` }} />
-               ))}
+          {status === "speaking" && (
+            <div className="absolute flex h-full w-full items-center justify-center gap-1 opacity-30">
+              {[...Array(20)].map((_, i) => (
+                <div
+                  key={i}
+                  className="w-0.5 animate-pulse rounded-full bg-[#545353]"
+                  style={{
+                    height: `${Math.random() * 50 + 20}px`,
+                    animationDelay: `${i * 0.05}s`,
+                  }}
+                />
+              ))}
             </div>
           )}
-          <div className={`w-52 h-52 rounded-full border border-[#545353]/20 flex flex-col items-center justify-center bg-white/40 backdrop-blur-sm z-10 transition-all duration-700 ${status === 'speaking' ? 'scale-105 shadow-xl border-[#545353]/40' : 'shadow-sm'}`}>
-            {status === 'thinking' && <Loader2 className="w-6 h-6 animate-spin mb-3 opacity-30" />}
-            {status === 'listening' && <div className="w-2 h-2 rounded-full bg-red-400 animate-ping mb-3" />}
-            {status === 'error' && <AlertCircle className="w-6 h-6 text-red-300 mb-3" />}
-            <p className="text-[9px] tracking-[0.3em] uppercase font-bold text-center px-8 leading-relaxed">
-              {status === 'error' ? errorMsg : displayText}
+
+          <div
+            className={`z-10 flex h-52 w-52 flex-col items-center justify-center rounded-full border border-[#545353]/20 bg-white/40 backdrop-blur-sm transition-all duration-700 ${
+              status === "speaking"
+                ? "scale-105 border-[#545353]/40 shadow-xl"
+                : "shadow-sm"
+            }`}
+          >
+            {status === "thinking" && (
+              <Loader2 className="mb-3 h-6 w-6 animate-spin opacity-30" />
+            )}
+
+            {status === "listening" && (
+              <div className="mb-3 h-2 w-2 animate-ping rounded-full bg-red-400" />
+            )}
+
+            {status === "error" && (
+              <AlertCircle className="mb-3 h-6 w-6 text-red-300" />
+            )}
+
+            <p className="px-8 text-center text-[9px] font-bold uppercase leading-relaxed tracking-[0.3em]">
+              {status === "error" ? errorMsg : displayText}
             </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 w-full max-w-sm flex-none">
+        <div className="grid w-full max-w-sm flex-none grid-cols-2 gap-3">
           {suggestions.map((item, idx) => (
-            <button key={idx} onClick={() => handleSuggestion(item.label)} disabled={status !== 'idle' && status !== 'error'} className="flex items-center gap-3 p-3 border border-[#545353]/10 rounded-xl hover:border-[#545353]/40 transition-all bg-gray-50/20 active:scale-95 disabled:opacity-30">
+            <button
+              key={idx}
+              onClick={() => handleSuggestion(item.label)}
+              disabled={status !== "idle" && status !== "error"}
+              className="flex items-center gap-3 rounded-xl border border-[#545353]/10 bg-gray-50/20 p-3 transition-all hover:border-[#545353]/40 active:scale-95 disabled:opacity-30"
+            >
               <div className="text-[#545353]/50">{item.icon}</div>
-              <span className="text-[9px] uppercase tracking-wider font-bold">{item.label}</span>
+              <span className="text-[9px] font-bold uppercase tracking-wider">
+                {item.label}
+              </span>
             </button>
           ))}
         </div>
       </main>
 
-      <footer className="pb-12 pt-4 flex flex-col items-center flex-none">
-        <button onClick={toggleMic} disabled={status === 'thinking' || status === 'speaking'} className={`w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 shadow-sm ${status === 'listening' ? 'bg-[#545353] scale-110 shadow-lg' : 'bg-white border border-[#545353]/20 hover:border-[#545353] active:bg-gray-50'}`}>
-          {status === 'listening' ? <MicOff size={24} color="white" /> : <Mic size={24} color="#545353" />}
+      <footer className="flex flex-none flex-col items-center pb-12 pt-4">
+        <button
+          onClick={toggleMic}
+          disabled={status === "thinking" || status === "speaking"}
+          className={`flex h-20 w-20 items-center justify-center rounded-full shadow-sm transition-all duration-300 ${
+            status === "listening"
+              ? "scale-110 bg-[#545353] shadow-lg"
+              : "border border-[#545353]/20 bg-white hover:border-[#545353] active:bg-gray-50"
+          }`}
+        >
+          {status === "listening" ? (
+            <MicOff size={24} color="white" />
+          ) : (
+            <Mic size={24} color="#545353" />
+          )}
         </button>
-        <p className="mt-4 text-[8px] uppercase tracking-[0.2em] opacity-40 font-bold">Toque para falar</p>
+
+        <p className="mt-4 text-[8px] font-bold uppercase tracking-[0.2em] opacity-40">
+          Toque para falar
+        </p>
       </footer>
     </div>
   );
