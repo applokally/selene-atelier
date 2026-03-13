@@ -43,7 +43,7 @@ REGRAS CRÍTICAS:
 FORMATO EXATO:
 {"texto":"sua fala aqui","status":"curando sua essência...","passo":1}`;
 
-const CHAT_MODEL = "gemini-2.0-flash";
+const CHAT_MODEL = "gemini-3-flash-preview";
 const TTS_MODEL = "gemini-2.5-flash-preview-tts";
 
 export default function Page() {
@@ -284,6 +284,9 @@ export default function Page() {
             generationConfig: {
               responseMimeType: "application/json",
               temperature: 0.7,
+              thinkingConfig: {
+                thinkingLevel: "low",
+              },
             },
           }),
         }
@@ -423,7 +426,7 @@ export default function Page() {
         <div className="flex flex-col items-center">
           <h1 className="text-4xl font-light tracking-[0.4em]">SÉLÈNE</h1>
           <div className="my-4 h-px w-48 bg-[#545353]/20" />
-          <p className="px-4 text-center text-[10px] font-medium uppercase tracking-[0.15em] whitespace-nowrap">
+          <p className="whitespace-nowrap px-4 text-center text-[10px] font-medium uppercase tracking-[0.15em]">
             Curadoria Cosmética, Saúde &amp; Bem Estar
           </p>
         </div>
