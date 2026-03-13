@@ -21,7 +21,7 @@ REGRAS DE OURO (NÃO NEGOCIÁVEIS):
 
 RESPOSTA OBRIGATÓRIA EM JSON: {"texto": "fala da seline aqui", "status": "entendendo sua resposta...", "passo": 1, "total": 0}`;
 
-export default function SeleneApp() {
+export default function Page() {
   const [status, setStatus] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
   const [displayText, setDisplayText] = useState('SÉLÈNE ATELIER. ');
   const [showOrder, setShowOrder] = useState(false);
